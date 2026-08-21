@@ -1,0 +1,9 @@
+cluster_admin_principal_arn = "arn:aws:iam::123456789012:role/YOUR-EKS-ADMIN-ROLE"
+
+cluster_endpoint_public_access_cidrs = [
+  "203.0.113.10/32"
+]
+
+node_instance_types = [
+  "t3.medium"
+]

@@ -1,0 +1,36 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+
+# Variable files
+*.tfvars
+*.tfvars.json
+
+# Local backend config
+backend.hcl
+
+# Local environment
+.env
+**/.env
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Overrides
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform CLI
+.terraformrc
+terraform.rc
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
