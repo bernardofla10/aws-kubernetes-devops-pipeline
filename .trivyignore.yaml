@@ -1,0 +1,18 @@
+misconfigurations:
+  - id: AVD-AWS-0132
+    paths:
+      - "bootstrap/main.tf"
+    statement: SSE-S3 is accepted for this lab state bucket to avoid customer-managed KMS key costs.
+    expired_at: 2027-08-22
+
+  - id: AVD-AWS-0039
+    paths:
+      - "modules/eks/main.tf"
+    statement: EKS 1.36 encrypts all Kubernetes API data by default with an AWS-owned KMS key.
+    expired_at: 2027-08-22
+
+  - id: AVD-AWS-0040
+    paths:
+      - "modules/eks/main.tf"
+    statement: Public access is accepted for this lab; private access stays enabled and public CIDRs are restricted.
+    expired_at: 2027-08-22
