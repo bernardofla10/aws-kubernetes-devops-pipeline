@@ -5,7 +5,7 @@ provider "aws" {
     tags = {
       Project   = var.project_name
       ManagedBy = "Terraform"
-      Component = "terraform-bootstrap"
+      Component = "github-actions"
     }
   }
 }
