@@ -1,0 +1,200 @@
+name: Publish Container Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/upstream-image.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: container-publish-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+jobs:
+  publish:
+    name: Promote Vaultwarden to ECR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.1.0
+
+      - name: Parse image configuration
+        id: image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if ! jq -e '
+            type == "object" and
+            keys == ["digest", "image", "platform", "version"]
+          ' app/upstream-image.json > /dev/null; then
+            echo "Image configuration must contain only image, version, digest and platform"
+            exit 1
+          fi
+
+          IMAGE="$(jq -er '.image | select(type == "string")' app/upstream-image.json)"
+          VERSION="$(jq -er '.version | select(type == "string")' app/upstream-image.json)"
+          DIGEST="$(jq -er '.digest | select(type == "string")' app/upstream-image.json)"
+          PLATFORM="$(jq -er '.platform | select(type == "string")' app/upstream-image.json)"
+
+          if [[ "$IMAGE" != "vaultwarden/server" ]]; then
+            echo "Invalid upstream image"
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid semantic version"
+            exit 1
+          fi
+
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid SHA256 digest"
+            exit 1
+          fi
+
+          if [[ "$PLATFORM" != "linux/amd64" ]]; then
+            echo "Unsupported platform"
+            exit 1
+          fi
+
+          DIGEST_HEX="${DIGEST#sha256:}"
+          SHORT_DIGEST="${DIGEST_HEX:0:12}"
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
+          echo "source=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "tag=${VERSION}-${SHORT_DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.APP_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-session-name: app-ci-${{ github.run_id }}
+          mask-aws-account-id: true
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2.1.6
+
+      - name: Pull pinned upstream image
+        shell: bash
+        run: |
+          docker pull \
+            --platform "${{ steps.image.outputs.platform }}" \
+            "${{ steps.image.outputs.source }}"
+
+      - name: Prepare ECR image
+        id: target
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -Eeuo pipefail
+
+          TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ steps.image.outputs.tag }}"
+
+          docker tag \
+            "${{ steps.image.outputs.source }}" \
+            "$TARGET_IMAGE"
+
+          echo "image=$TARGET_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "repository=${ECR_REGISTRY}/${ECR_REPOSITORY}" >> "$GITHUB_OUTPUT"
+
+      - name: Security gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.target.outputs.image }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+          trivyignores: .trivyignore.yaml
+          version: v0.74.0
+
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.target.outputs.image }}
+          format: cyclonedx
+          output: sbom.cdx.json
+          exit-code: "0"
+          skip-setup-trivy: true
+
+      - name: Push image to ECR
+        shell: bash
+        run: docker push "${{ steps.target.outputs.image }}"
+
+      - name: Resolve ECR digest
+        id: ecr
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          DIGEST="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="${{ steps.image.outputs.tag }}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "ECR returned an invalid image digest"
+            exit 1
+          fi
+
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Generate provenance attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.target.outputs.repository }}
+          subject-digest: ${{ steps.ecr.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Generate SBOM attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.target.outputs.repository }}
+          subject-digest: ${{ steps.ecr.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: vaultwarden-sbom
+          path: sbom.cdx.json
+          retention-days: 30
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          {
+            echo "## Container Promotion"
+            echo ""
+            echo "- Upstream: \`${{ steps.image.outputs.source }}\`"
+            echo "- ECR tag: \`${{ steps.image.outputs.tag }}\`"
+            echo "- ECR digest: \`${{ steps.ecr.outputs.digest }}\`"
+            echo "- Security gate: passed"
+            echo "- SBOM: generated"
+            echo "- Provenance: attested"
+          } >> "$GITHUB_STEP_SUMMARY"
