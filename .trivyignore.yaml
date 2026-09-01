@@ -16,3 +16,20 @@ misconfigurations:
       - "modules/eks/main.tf"
     statement: Public access is accepted for this lab; private access stays enabled and public CIDRs are restricted.
     expired_at: 2027-08-22
+
+vulnerabilities:
+  - id: CVE-2026-53612
+    statement: Vaultwarden 1.37.2 does not yet include Debian's util-linux fix; accept temporarily and update the pinned upstream image before expiration.
+    expired_at: 2026-09-15
+
+  - id: CVE-2026-53613
+    statement: Vaultwarden 1.37.2 does not yet include Debian's util-linux fix; accept temporarily and update the pinned upstream image before expiration.
+    expired_at: 2026-09-15
+
+  - id: CVE-2026-53614
+    statement: Vaultwarden 1.37.2 does not yet include Debian's util-linux fix; accept temporarily and update the pinned upstream image before expiration.
+    expired_at: 2026-09-15
+
+  - id: CVE-2026-14456
+    statement: Vaultwarden 1.37.2 does not yet include Debian's OpenSSL fix; accept temporarily and update the pinned upstream image before expiration.
+    expired_at: 2026-09-15

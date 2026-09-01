@@ -1,6 +1,6 @@
 {
   "image": "vaultwarden/server",
-  "version": "1.37.1",
-  "digest": "sha256:e9efdf001bf0d68c21f2cbfb8e1d9b5961a7ca9c85e0a7e58bf51a13b997d744",
+  "version": "1.37.2",
+  "digest": "sha256:094b5689ed81549bd293418395c7cf495ae9d960fc2d4928cef2083ef913d912",
   "platform": "linux/amd64"
 }
