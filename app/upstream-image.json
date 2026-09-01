@@ -1,0 +1,6 @@
+{
+  "image": "vaultwarden/server",
+  "version": "1.37.1",
+  "digest": "sha256:e9efdf001bf0d68c21f2cbfb8e1d9b5961a7ca9c85e0a7e58bf51a13b997d744",
+  "platform": "linux/amd64"
+}
