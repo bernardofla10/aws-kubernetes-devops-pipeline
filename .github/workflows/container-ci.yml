@@ -1,0 +1,102 @@
+name: Container Security CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  validate-image:
+    name: Validate Upstream Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.1.0
+
+      - name: Parse image configuration
+        id: image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if ! jq -e '
+            type == "object" and
+            keys == ["digest", "image", "platform", "version"]
+          ' app/upstream-image.json > /dev/null; then
+            echo "Image configuration must contain only image, version, digest and platform"
+            exit 1
+          fi
+
+          IMAGE="$(jq -er '.image | select(type == "string")' app/upstream-image.json)"
+          VERSION="$(jq -er '.version | select(type == "string")' app/upstream-image.json)"
+          DIGEST="$(jq -er '.digest | select(type == "string")' app/upstream-image.json)"
+          PLATFORM="$(jq -er '.platform | select(type == "string")' app/upstream-image.json)"
+
+          if [[ "$IMAGE" != "vaultwarden/server" ]]; then
+            echo "Invalid upstream image"
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid semantic version"
+            exit 1
+          fi
+
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid SHA256 digest"
+            exit 1
+          fi
+
+          if [[ "$PLATFORM" != "linux/amd64" ]]; then
+            echo "Unsupported platform"
+            exit 1
+          fi
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
+          echo "ref=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Pull pinned upstream image
+        shell: bash
+        run: |
+          docker pull \
+            --platform "${{ steps.image.outputs.platform }}" \
+            "${{ steps.image.outputs.ref }}"
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+          limit-severities-for-sarif: true
+          trivyignores: .trivyignore.yaml
+          version: v0.74.0
+
+      - name: Upload Trivy results
+        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Enforce vulnerability policy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: table
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml
+          skip-setup-trivy: true

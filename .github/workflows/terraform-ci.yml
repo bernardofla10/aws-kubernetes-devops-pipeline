@@ -18,18 +18,23 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.15.9
 
       - name: Terraform Format
         run: terraform fmt -check -recursive terraform
 
-      - name: Terraform Init
-        working-directory: terraform/environments/dev
-        run: terraform init -backend=false
+      - name: Terraform Init and Validate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-      - name: Terraform Validate
-        working-directory: terraform/environments/dev
-        run: terraform validate
+          for directory in \
+            terraform/bootstrap \
+            terraform/account/github-actions \
+            terraform/environments/dev; do
+            terraform -chdir="$directory" init -backend=false -input=false
+            terraform -chdir="$directory" validate
+          done
 
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@v6
@@ -38,11 +43,11 @@ jobs:
           cache: true
 
       - name: Initialize TFLint
-        working-directory: terraform/environments/dev
+        working-directory: terraform
         run: tflint --init
 
       - name: Run TFLint
-        working-directory: terraform/environments/dev
+        working-directory: terraform
         run: tflint --recursive
 
       - name: Trivy IaC Scan

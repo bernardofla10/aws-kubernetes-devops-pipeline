@@ -11,8 +11,9 @@ The main goal of this project is to understand and implement a complete DevOps w
 * Infrastructure as Code with Terraform
 * Cloud infrastructure on AWS
 * Automated infrastructure deployment with GitHub Actions
-* Containerization with Docker
+* Secure promotion of third-party container artifacts
 * Container image storage with Amazon ECR
+* Trivy vulnerability gates, SBOMs and artifact attestations
 * Kubernetes workloads
 * Continuous Integration pipelines
 * GitOps and Continuous Delivery with Argo CD
@@ -36,12 +37,12 @@ Developer
 Infrastructure Pipeline       Application Pipeline
  GitHub Actions                GitHub Actions
     |                               |
- Terraform                     Docker Build
+ Terraform                   Pinned OCI Image
     |                               |
-    v                          Security Scan
+    v                         Security Gate
    AWS                              |
     |                               v
-    |                          Amazon ECR
+    |                    Amazon ECR + Attestations
     |                               |
     +---------------+---------------+
                     |
@@ -118,10 +119,11 @@ The project is divided into seven stages.
 
 ### 4. Application CI
 
-* Build Docker images
-* Scan container images
-* Authenticate with AWS
-* Push images to Amazon ECR
+* Pin the upstream Vaultwarden image by platform-specific digest
+* Block promotion on fixable HIGH or CRITICAL vulnerabilities
+* Authenticate to AWS through GitHub OIDC without static access keys
+* Promote the exact approved artifact to immutable Amazon ECR tags
+* Generate a CycloneDX SBOM and OCI provenance/SBOM attestations
 
 ### 5. Kubernetes and GitOps
 
@@ -169,7 +171,7 @@ Terraform Plan / Apply
 ### Application
 
 ```text
-Application Code
+Pinned Upstream Image
        |
        v
      GitHub
@@ -178,13 +180,16 @@ Application Code
  GitHub Actions
        |
        v
-  Docker Build
+ Security Gate
        |
        v
- Security Scan
+ CycloneDX SBOM
        |
        v
   Amazon ECR
+       |
+       v
+ OCI Attestations
 ```
 
 ### Continuous Delivery
@@ -211,6 +216,9 @@ aws-kubernetes-devops-pipeline/
 │
 ├── terraform/
 │
+├── app/
+│   └── upstream-image.json
+│
 ├── kubernetes/
 │
 ├── .github/
@@ -227,7 +235,8 @@ By the end of this project, the goal is to understand how to:
 
 * Provision cloud infrastructure using Infrastructure as Code
 * Automate infrastructure deployments
-* Build and publish container images
+* Safely promote immutable third-party container images
+* Generate and attach supply-chain metadata to OCI artifacts
 * Deploy applications to Kubernetes
 * Implement CI/CD pipelines
 * Apply GitOps principles
@@ -241,4 +250,3 @@ By the end of this project, the goal is to understand how to:
 Computer Engineering student at the Military Institute of Engineering (IME).
 
 Focused on DevOps, Platform Engineering, Cloud Infrastructure and Backend Systems.
-
